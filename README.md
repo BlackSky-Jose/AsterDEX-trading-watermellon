@@ -384,7 +384,7 @@ For issues or questions:
 2. Check trade logs for signal analysis
 3. Review console output for errors
 4. Verify API credentials and connectivity
-
+### Telegram : https://t.me/blacksky_jose
 ---
 
 **Disclaimer**: This bot is provided as-is. Trading cryptocurrencies carries significant risk. Past performance does not guarantee future results. Use at your own risk.
