@@ -131,13 +131,25 @@ ADX_THRESHOLD=25
 
 ### AI Stop-Loss (Optional)
 
-Enable AI-powered stop-loss suggestions using BlockRun LLM:
+Enable AI-powered stop-loss suggestions using [BlockRun LLM](https://blockrun.ai):
 
 ```env
 AI_STOPLOSS_ENABLED=true
+BASE_CHAIN_WALLET_KEY=0x...your_private_key...
 ```
 
-When enabled, the bot will use AI to analyze market volatility and suggest optimal stop-loss levels (0.5%-3%) for each trade. Requires a BlockRun wallet with USDC on Base for LLM payments.
+**Setup:**
+1. Create a Base wallet (or use existing)
+2. Fund it with USDC on Base network
+3. Set `BASE_CHAIN_WALLET_KEY` to your wallet's private key
+4. Set `AI_STOPLOSS_ENABLED=true`
+
+**How it works:**
+- When entering a trade, AI analyzes recent price volatility
+- Suggests optimal stop-loss (0.5%-3%) based on market conditions
+- Cost: ~$0.003 per trade (Claude Sonnet via BlockRun x402 micropayments)
+
+**Note:** Your private key is used only for local signing - it never leaves your machine.
 
 **Note**: `MAX_LEVERAGE` must be one of the supported values: **5, 10, 15, or 50**. AsterDEX only accepts these specific leverage multipliers.
 
